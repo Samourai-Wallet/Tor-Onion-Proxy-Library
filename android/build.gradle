@@ -34,19 +34,22 @@ repositories {
 }
 
 android {
-    compileSdkVersion 27
-    buildToolsVersion "27.0.3"
-
+    compileSdkVersion 28
+    buildToolsVersion '28.0.3'
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
     defaultConfig {
         minSdkVersion 16
-        targetSdkVersion 27
+        targetSdkVersion 28
         versionName '0.0.7'
         versionCode 7
         archivesBaseName = 'ThaliOnionProxyAndroid'
     }
     defaultConfig {
-        minSdkVersion 16 // Please see the readme if you need Sdk support below 16
-        targetSdkVersion 27
+        minSdkVersion 21 // Please see the readme if you need Sdk support below 16
+        targetSdkVersion 28
     }
 
     packagingOptions {
@@ -59,8 +62,9 @@ android {
 }
 
 dependencies {
-    compile 'org.slf4j:slf4j-api:1.7.7'
-    androidTestCompile 'org.slf4j:slf4j-android:1.7.7'
+    implementation 'io.reactivex.rxjava2:rxandroid:2.1.0'
+    implementation 'org.slf4j:slf4j-api:1.7.25'
+    androidTestImplementation 'org.slf4j:slf4j-android:1.7.7'
 }
 
 task sourcesJar(type: Jar) {
