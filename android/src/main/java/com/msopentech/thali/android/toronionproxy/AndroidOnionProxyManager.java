@@ -37,14 +37,25 @@ import android.content.IntentFilter;
 import android.net.ConnectivityManager;
 import android.net.NetworkInfo;
 import android.os.Build;
+import android.util.Log;
 
 import com.msopentech.thali.toronionproxy.OnionProxyManager;
 
+import org.reactivestreams.Subscription;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.Observable;
+import java.util.concurrent.TimeUnit;
+
+import io.reactivex.Single;
+import io.reactivex.SingleEmitter;
+import io.reactivex.SingleOnSubscribe;
+import io.reactivex.android.schedulers.AndroidSchedulers;
+import io.reactivex.disposables.Disposable;
+import io.reactivex.schedulers.Schedulers;
 
 import static android.content.Context.CONNECTIVITY_SERVICE;
 import static android.net.ConnectivityManager.CONNECTIVITY_ACTION;
@@ -52,6 +63,8 @@ import static android.net.ConnectivityManager.EXTRA_NO_CONNECTIVITY;
 
 public class AndroidOnionProxyManager extends OnionProxyManager {
     private static final Logger LOG = LoggerFactory.getLogger(AndroidOnionProxyManager.class);
+    private Disposable onlineSubscription;
+    private static final String TAG = "AndroidOnionProxyManage";
 
     private volatile BroadcastReceiver networkStateReceiver;
     private final Context context;
@@ -64,10 +77,17 @@ public class AndroidOnionProxyManager extends OnionProxyManager {
     @Override
     public boolean installAndStartTorOp() throws IOException, InterruptedException {
         if (super.installAndStartTorOp()) {
-            // Register to receive network status events
-            networkStateReceiver = new NetworkStateReceiver();
-            IntentFilter filter = new IntentFilter(CONNECTIVITY_ACTION);
-            context.registerReceiver(networkStateReceiver, filter);
+            IntentFilter intentFilter = new IntentFilter();
+            intentFilter.addAction(ConnectivityManager.CONNECTIVITY_ACTION);
+            context.registerReceiver(new ConnectionChangeReceiver(), intentFilter);
+
+            onlineSubscription = NetworkManager.getInstance().onlineSignal()
+                    .debounce(100, TimeUnit.MILLISECONDS)
+                    .observeOn(Schedulers.io())
+                    .subscribeOn(AndroidSchedulers.mainThread())
+                    .subscribe(this::enableNetwork, error->{
+                Log.i(TAG, "installAndStartTorOp: ".concat(error.getMessage()));
+            });
             return true;
         }
         return false;
@@ -80,8 +100,8 @@ public class AndroidOnionProxyManager extends OnionProxyManager {
         } finally {
             if (networkStateReceiver != null) {
                 try {
-                    context.unregisterReceiver(networkStateReceiver);
-                } catch(IllegalArgumentException e) {
+                    onlineSubscription.dispose();
+                } catch (IllegalArgumentException e) {
                     // There is a race condition where if someone calls stop before installAndStartTorOp is done
                     // then we could get an exception because the network state receiver might not be properly
                     // registered.
@@ -93,53 +113,8 @@ public class AndroidOnionProxyManager extends OnionProxyManager {
 
     @SuppressLint("NewApi")
     protected boolean setExecutable(File f) {
-        if(Build.VERSION.SDK_INT >= 9) {
-            return f.setExecutable(true, true);
-        } else {
-            String[] command = { "chmod", "700", f.getAbsolutePath() };
-            try {
-                return Runtime.getRuntime().exec(command).waitFor() == 0;
-            } catch(IOException e) {
-                LOG.warn(e.toString(), e);
-            } catch(InterruptedException e) {
-                LOG.warn("Interrupted while executing chmod");
-                Thread.currentThread().interrupt();
-            } catch(SecurityException e) {
-                LOG.warn(e.toString(), e);
-            }
-            return false;
-        }
+        return f.setExecutable(true, true);
     }
 
-    private class NetworkStateReceiver extends BroadcastReceiver {
-        @Override
-        public void onReceive(final Context ctx, final Intent i) {
 
-            new Thread() {
-                @Override
-                public void run() {
-                    try {
-                        if (!isRunning()) return;
-                    } catch (IOException e) {
-                        LOG.info("Did someone call before Tor was ready?", e);
-                        return;
-                    }
-                    boolean online = !i.getBooleanExtra(EXTRA_NO_CONNECTIVITY, false);
-                    if (online) {
-                        // Some devices fail to set EXTRA_NO_CONNECTIVITY, double check
-                        Object o = ctx.getSystemService(CONNECTIVITY_SERVICE);
-                        ConnectivityManager cm = (ConnectivityManager) o;
-                        NetworkInfo net = cm.getActiveNetworkInfo();
-                        if (net == null || !net.isConnected()) online = false;
-                    }
-                    LOG.info("Online: " + online);
-                    try {
-                        enableNetwork(online);
-                    } catch (IOException e) {
-                        LOG.warn(e.toString(), e);
-                    }
-                }
-            }.start();
-        }
-    }
 }
