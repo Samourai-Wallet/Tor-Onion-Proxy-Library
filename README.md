@@ -47,7 +47,7 @@ dependencies {
 # Currently used Tor version
 
 This fork is built using
-* latest tor for jan 5, 2018 (0.3.1.9)
+* latest tor for Feb 5, 2019 0.3.5.8
 
 
 # How do I use this library?
